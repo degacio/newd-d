@@ -1,35 +1,54 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Create server-side Supabase client with service role key for admin operations
-const supabaseAdmin = createClient(
-  process.env.EXPO_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  }
-);
+// Helper function to validate and create Supabase clients
+function getSupabaseClient(useServiceRole = false) {
+  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Helper function to create authenticated Supabase client
-function createAuthenticatedClient(authHeader: string) {
-  const token = authHeader.replace('Bearer ', '');
-  return createClient(
-    process.env.EXPO_PUBLIC_SUPABASE_URL!,
-    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!,
-    {
+  if (!supabaseUrl) {
+    throw new Error('EXPO_PUBLIC_SUPABASE_URL environment variable is not defined');
+  }
+
+  if (useServiceRole) {
+    if (!serviceRoleKey) {
+      throw new Error('SUPABASE_SERVICE_ROLE_KEY environment variable is not defined');
+    }
+    return createClient(supabaseUrl, serviceRoleKey, {
       auth: {
         autoRefreshToken: false,
         persistSession: false
-      },
-      global: {
-        headers: {
-          Authorization: authHeader
-        }
+      }
+    });
+  } else {
+    if (!anonKey) {
+      throw new Error('EXPO_PUBLIC_SUPABASE_ANON_KEY environment variable is not defined');
+    }
+    return createClient(supabaseUrl, anonKey);
+  }
+}
+
+// Helper function to create authenticated Supabase client
+function createAuthenticatedClient(authHeader: string) {
+  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !anonKey) {
+    throw new Error('Required Supabase environment variables are not defined');
+  }
+
+  const token = authHeader.replace('Bearer ', '');
+  return createClient(supabaseUrl, anonKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    },
+    global: {
+      headers: {
+        Authorization: authHeader
       }
     }
-  );
+  });
 }
 
 export async function POST(request: Request, { id }: { id: string }) {
@@ -48,6 +67,7 @@ export async function POST(request: Request, { id }: { id: string }) {
     }
 
     // Use admin client for the update operation since we need to generate new tokens
+    const supabaseAdmin = getSupabaseClient(true);
     const { data: character, error } = await supabaseAdmin
       .from('characters')
       .update({
@@ -71,7 +91,13 @@ export async function POST(request: Request, { id }: { id: string }) {
     });
   } catch (error) {
     console.error('API Error:', error);
-    return new Response('Internal server error', { status: 500 });
+    return new Response(JSON.stringify({ 
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }), { 
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 }
 
@@ -91,6 +117,7 @@ export async function DELETE(request: Request, { id }: { id: string }) {
     }
 
     // Use admin client for the update operation
+    const supabaseAdmin = getSupabaseClient(true);
     const { error } = await supabaseAdmin
       .from('characters')
       .update({
@@ -109,6 +136,12 @@ export async function DELETE(request: Request, { id }: { id: string }) {
     return new Response('Share token revoked', { status: 200 });
   } catch (error) {
     console.error('API Error:', error);
-    return new Response('Internal server error', { status: 500 });
+    return new Response(JSON.stringify({ 
+      error: 'Internal server error',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    }), { 
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 }
